@@ -108,24 +108,61 @@ WORKDIR /ros2_ws
 RUN cat > /usr/local/bin/rv <<'EOS'
 #!/usr/bin/env bash
 set -e
+if [ -f /opt/ros/jazzy/setup.bash ]; then
+    source /opt/ros/jazzy/setup.bash
+fi
+if [ -f /ros2_ws/install/setup.bash ]; then
+    source /ros2_ws/install/setup.bash
+fi
 export QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-xcb}
 export QT_X11_NO_MITSHM=1
+if [ -e /dev/nvidia0 ]; then
+    unset MESA_LOADER_DRIVER_OVERRIDE GALLIUM_DRIVER LIBGL_DRI3_DISABLE
+    export __GLX_VENDOR_LIBRARY_NAME=${__GLX_VENDOR_LIBRARY_NAME:-nvidia}
+    export __EGL_VENDOR_LIBRARY_FILENAMES=${__EGL_VENDOR_LIBRARY_FILENAMES:-/usr/share/glvnd/egl_vendor.d/10_nvidia.json}
+fi
 exec rviz2 "$@"
 EOS
 RUN cat > /usr/local/bin/gzs <<'EOS'
 #!/usr/bin/env bash
 set -e
+if [ -f /opt/ros/jazzy/setup.bash ]; then
+    source /opt/ros/jazzy/setup.bash
+fi
+if [ -f /ros2_ws/install/setup.bash ]; then
+    source /ros2_ws/install/setup.bash
+fi
 export QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-xcb}
 export QT_X11_NO_MITSHM=1
-exec gz sim "$@"
+if [ -e /dev/nvidia0 ]; then
+    unset MESA_LOADER_DRIVER_OVERRIDE GALLIUM_DRIVER LIBGL_DRI3_DISABLE
+    export __GLX_VENDOR_LIBRARY_NAME=${__GLX_VENDOR_LIBRARY_NAME:-nvidia}
+    export __EGL_VENDOR_LIBRARY_FILENAMES=${__EGL_VENDOR_LIBRARY_FILENAMES:-/usr/share/glvnd/egl_vendor.d/10_nvidia.json}
+fi
+if [ "$#" -eq 0 ]; then
+    exec gz sim -r empty.sdf
+else
+    exec gz sim "$@"
+fi
 EOS
 RUN cat > /usr/local/bin/wb <<'EOS'
 #!/usr/bin/env bash
 set -e
+if [ -f /opt/ros/jazzy/setup.bash ]; then
+    source /opt/ros/jazzy/setup.bash
+fi
+if [ -f /ros2_ws/install/setup.bash ]; then
+    source /ros2_ws/install/setup.bash
+fi
 export QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-xcb}
 export QT_X11_NO_MITSHM=1
 export WEBOTS_HOME=${WEBOTS_HOME:-/usr/local/webots}
 export ROS2_WEBOTS_HOME=${ROS2_WEBOTS_HOME:-/usr/local/webots}
+if [ -e /dev/nvidia0 ]; then
+    unset MESA_LOADER_DRIVER_OVERRIDE GALLIUM_DRIVER LIBGL_DRI3_DISABLE
+    export __GLX_VENDOR_LIBRARY_NAME=${__GLX_VENDOR_LIBRARY_NAME:-nvidia}
+    export __EGL_VENDOR_LIBRARY_FILENAMES=${__EGL_VENDOR_LIBRARY_FILENAMES:-/usr/share/glvnd/egl_vendor.d/10_nvidia.json}
+fi
 exec /usr/local/webots/webots "$@"
 EOS
 RUN chmod +x /usr/local/bin/rv /usr/local/bin/gzs /usr/local/bin/wb
