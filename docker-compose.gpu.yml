@@ -1,0 +1,32 @@
+# =============================================================================
+# docker-compose.gpu.yml — GPU acceleration override (auto-included by run.sh)
+# =============================================================================
+# Included automatically by run.sh when /dev/dri exists on the host.
+# Adds /dev/dri device passthrough and video/render group membership so Mesa
+# can use the hardware GPU (Intel or AMD) instead of llvmpipe software rendering.
+#
+# This file is NEVER included directly — always via:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+#
+# If your machine has no /dev/dri (Docker Desktop VM, NVIDIA proprietary,
+# or pure CPU system), run.sh skips this file and Mesa automatically falls
+# back to llvmpipe software rendering.
+# =============================================================================
+
+services:
+  ros_dev:
+    devices:
+      # Pass only the Intel iGPU (renderD128 = 0x8086, renderD129 = NVIDIA 0x10de).
+      # Mesa has no DRI driver for NVIDIA proprietary; passing renderD129 causes
+      # "egl: failed to create dri2 screen" warnings and GL init failures.
+      - /dev/dri/card0:/dev/dri/card0
+      - /dev/dri/renderD128:/dev/dri/renderD128
+    group_add:
+      # Use host numeric GIDs so the kernel allows access to /dev/dri devices.
+      # Host: video=44, render=992  (run: getent group render video on host to verify)
+      - "44"    # video  — owns /dev/dri/card*
+      - "992"   # render — owns /dev/dri/renderD*
+    environment:
+      # Force Mesa to use the Intel iris driver (RPL-S / Gen12+).
+      # Without this Mesa iterates all DRI nodes including the NVIDIA one and fails.
+      - MESA_LOADER_DRIVER_OVERRIDE=iris
