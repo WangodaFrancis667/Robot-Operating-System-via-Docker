@@ -1,118 +1,45 @@
-# =============================================================================
-# ROS 2 Jazzy — Docker Compose Configuration (Linux / X11 Forwarding)
-# =============================================================================
-# Compatible with: Linux hosts running an X11 display server
-#
-# Usage:
-#   ./run.sh start    — grant X11 access, build (if needed) and launch
-#   ./run.sh shell    — open an interactive shell in the running container
-#   ./run.sh stop     — stop and remove the container
-#   ./run.sh build    — force-rebuild the image
-#   ./run.sh status   — show container state
-#   ./run.sh logs     — tail container logs
-#   ./run.sh gui      — show GUI diagnostic info
-#
-# GUI Strategy: X11 forwarding — native windows on the host desktop
-#   The host X11 socket (/tmp/.X11-unix) is mounted into the container.
-#   DISPLAY is passed from the host so GUI apps (Gazebo, RViz2, rqt)
-#   open as real native windows — no VNC, no browser, no extra latency.
-#   run.sh runs `xhost +local:root` to grant the container X11 access.
-#
-# Inside the container use:  rv (rviz2)   rq (rqt)   gz (gazebo sim)
-# =============================================================================
-
 services:
   ros_dev:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ros2-jazzy-dev:latest
-    container_name: ros_jazzy_dev
-
+      args:
+        WEBOTS_VERSION: ${WEBOTS_VERSION:-R2025a}
+        WEBOTS_DEB: ${WEBOTS_DEB:-webots_2025a_amd64.deb}
+    image: ros2-jazzy-sim:latest
+    container_name: ros2_jazzy_sim
+    stdin_open: true
+    tty: true
+    restart: "no"
+    shm_size: "2gb"
+    ipc: host
+    network_mode: host
     environment:
-      # ------------------------------------------------------------------
-      # Display — X11 forwarding: use the host's X11 display directly.
-      # The host X11 socket is mounted at /tmp/.X11-unix (see volumes).
-      # run.sh grants container access via `xhost +local:root`.
-      # ------------------------------------------------------------------
-      - DISPLAY=${DISPLAY:-:0}
-
-      # ------------------------------------------------------------------
-      # OpenGL — Mesa hardware GPU rendering via /dev/dri passthrough.
-      # The /dev/dri device is mounted below and the container user is added
-      # to the video/render groups for access.
-      # MESA_GL_VERSION_OVERRIDE=3.3  satisfies OGRE/RViz2 GL version check.
-      # QT_X11_NO_MITSHM=1            prevents shared-memory X11 transport
-      #                               errors inside Docker containers.
-      # ------------------------------------------------------------------
-      - __GLX_VENDOR_LIBRARY_NAME=mesa
-      - __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
-      - MESA_GL_VERSION_OVERRIDE=3.3
-      - MESA_GLSL_VERSION_OVERRIDE=330
-      - QT_X11_NO_MITSHM=1
-
-      # OGRE off-screen texture blit — avoids GLX pbuffer issues.
-      - OGRE_RTT_MODE=Copy
-
-      # Qt xcb backend.
-      - QT_QPA_PLATFORM=xcb
-
-      # Suppress Qt XDG_RUNTIME_DIR warnings.
-      - XDG_RUNTIME_DIR=/tmp/runtime-ros
-
-      # ------------------------------------------------------------------
-      # ROS 2
-      # ------------------------------------------------------------------
-      - ROS_DOMAIN_ID=0
-      - RCUTILS_COLORIZED_OUTPUT=1
-
-      # ------------------------------------------------------------------
-      # Gazebo Fuel — suppress REST/libcurl error spam when a model URI
-      # cannot be reached.  Set to 4 temporarily to debug Fuel issues.
-      # ------------------------------------------------------------------
-      - GZ_FUEL_VERBOSITY=0
-      - GZ_FUEL_CACHE_PATH=/home/ros/.gz/fuel
-
-    # No ports needed — GUI windows open natively on the host via X11.
-
+      DISPLAY: ${DISPLAY}
+      QT_QPA_PLATFORM: xcb
+      QT_X11_NO_MITSHM: "1"
+      XDG_RUNTIME_DIR: /tmp/runtime-ros
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      RCUTILS_COLORIZED_OUTPUT: "1"
+      WEBOTS_HOME: /usr/local/webots
+      ROS2_WEBOTS_HOME: /usr/local/webots
+      LIBGL_ALWAYS_INDIRECT: "0"
     volumes:
-      # X11 socket — allows container GUI apps to open windows on host display.
-      # X11_SOCKET_DIR is set by run.sh:
-      #   Native Docker Engine : /tmp/.X11-unix  (direct mount)
-      #   Docker Desktop Linux : ~/.x11-bridge   (socat bridge, avoids VM /tmp restriction)
-      - ${X11_SOCKET_DIR:-/tmp/.X11-unix}:/tmp/.X11-unix:rw
-      # ROS 2 package source — persisted on the host
-      - ./src:/ros2_ws/src
-      # Named volumes keep colcon build artifacts between container restarts
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./src:/ros2_ws/src:rw
       - ros2_build_cache:/ros2_ws/build
       - ros2_install_cache:/ros2_ws/install
       - ros2_log_cache:/ros2_ws/log
-      # Persist the Gazebo Fuel model cache across container rebuilds
-      - gz_fuel_cache:/home/ros/.gz/fuel
-
-    stdin_open: true
-    tty: true
-    privileged: false
-
-    shm_size: "2gb"
-    restart: "no"
-
-    # ------------------------------------------------------------------
-    # Network — use bridge mode for better DNS resolution
-    # ------------------------------------------------------------------
-    network_mode: bridge
-
-    # ------------------------------------------------------------------
-    # DNS — explicit resolvers for fuel.gazebosim.org and other external
-    # hosts (default Docker DNS can fail on macOS/Windows).
-    # ------------------------------------------------------------------
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-      - 1.1.1.1
+      - webots_cache:/home/ros/.cache/Cyberbotics
+      - webots_config:/home/ros/.config/Cyberbotics
+      - gz_cache:/home/ros/.gz
+    entrypoint: ["/entrypoint.sh"]
+    command: ["bash"]
 
 volumes:
   ros2_build_cache:
   ros2_install_cache:
   ros2_log_cache:
-  gz_fuel_cache:       # Persists downloaded Gazebo Fuel models across rebuilds
+  webots_cache:
+  webots_config:
+  gz_cache:
