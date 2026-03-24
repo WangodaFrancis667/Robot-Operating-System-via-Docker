@@ -11,6 +11,12 @@ export QT_X11_NO_MITSHM=1
 export WEBOTS_HOME=${WEBOTS_HOME:-/usr/local/webots}
 export ROS2_WEBOTS_HOME=${ROS2_WEBOTS_HOME:-/usr/local/webots}
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/runtime-ros}
+if [ -e /dev/nvidia0 ]; then
+  # Prefer host NVIDIA OpenGL/EGL in container to avoid Mesa fallback paths.
+  unset MESA_LOADER_DRIVER_OVERRIDE GALLIUM_DRIVER LIBGL_DRI3_DISABLE
+  export __GLX_VENDOR_LIBRARY_NAME=${__GLX_VENDOR_LIBRARY_NAME:-nvidia}
+  export __EGL_VENDOR_LIBRARY_FILENAMES=${__EGL_VENDOR_LIBRARY_FILENAMES:-/usr/share/glvnd/egl_vendor.d/10_nvidia.json}
+fi
 
 mkdir -p "${XDG_RUNTIME_DIR}" /home/ros/.cache/Cyberbotics /home/ros/.config/Cyberbotics /home/ros/.gz
 chown -R ros:ros "${XDG_RUNTIME_DIR}" /home/ros/.cache/Cyberbotics /home/ros/.config/Cyberbotics /home/ros/.gz
