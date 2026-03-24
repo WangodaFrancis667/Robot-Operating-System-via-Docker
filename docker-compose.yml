@@ -1,25 +1,22 @@
 # =============================================================================
-# ROS 2 Jazzy — Docker Compose Configuration (Cross-Platform)
+# ROS 2 Jazzy — Docker Compose Configuration (Linux / X11 Forwarding)
 # =============================================================================
-# Compatible with: macOS (Apple Silicon + Intel), Linux, Windows (WSL2)
+# Compatible with: Linux hosts running an X11 display server
 #
 # Usage:
-#   ./run.sh start    — build (if needed) and launch the container
+#   ./run.sh start    — grant X11 access, build (if needed) and launch
 #   ./run.sh shell    — open an interactive shell in the running container
 #   ./run.sh stop     — stop and remove the container
 #   ./run.sh build    — force-rebuild the image
 #   ./run.sh status   — show container state
 #   ./run.sh logs     — tail container logs
-#   ./run.sh gui      — show GUI connection info
+#   ./run.sh gui      — show GUI diagnostic info
 #
-# GUI Strategy: Pure Mesa llvmpipe + VNC + noVNC (no VirtualGL, no XQuartz)
-#   All GUI apps render on an Xvfb virtual framebuffer (:99) inside the
-#   container using Mesa's llvmpipe software renderer (OpenGL 4.5).
-#   The framebuffer is streamed over VNC (port 5900) and served via the
-#   noVNC browser client (port 6080).
-#
-#   View the desktop: http://localhost:6080/vnc.html
-#   VNC client:       vnc://localhost:5900  (no password)
+# GUI Strategy: X11 forwarding — native windows on the host desktop
+#   The host X11 socket (/tmp/.X11-unix) is mounted into the container.
+#   DISPLAY is passed from the host so GUI apps (Gazebo, RViz2, rqt)
+#   open as real native windows — no VNC, no browser, no extra latency.
+#   run.sh runs `xhost +local:root` to grant the container X11 access.
 #
 # Inside the container use:  rv (rviz2)   rq (rqt)   gz (gazebo sim)
 # =============================================================================
@@ -34,26 +31,30 @@ services:
 
     environment:
       # ------------------------------------------------------------------
-      # Display — Xvfb virtual framebuffer (:99) inside the container.
+      # Display — X11 forwarding: use the host's X11 display directly.
+      # The host X11 socket is mounted at /tmp/.X11-unix (see volumes).
+      # run.sh grants container access via `xhost +local:root`.
       # ------------------------------------------------------------------
-      - DISPLAY=:99
+      - DISPLAY=${DISPLAY:-:0}
 
       # ------------------------------------------------------------------
-      # Mesa llvmpipe software renderer — OpenGL 4.5, no GPU required.
-      # LIBGL_ALWAYS_SOFTWARE=1 forces Mesa to handle all GL calls.
-      # GALLIUM_DRIVER=llvmpipe selects the llvmpipe Gallium driver.
+      # OpenGL — Mesa hardware GPU rendering via /dev/dri passthrough.
+      # The /dev/dri device is mounted below and the container user is added
+      # to the video/render groups for access.
+      # MESA_GL_VERSION_OVERRIDE=3.3  satisfies OGRE/RViz2 GL version check.
+      # QT_X11_NO_MITSHM=1            prevents shared-memory X11 transport
+      #                               errors inside Docker containers.
       # ------------------------------------------------------------------
-      - LIBGL_ALWAYS_SOFTWARE=1
-      - GALLIUM_DRIVER=llvmpipe
-
-      # Tell OGRE/RViz2 the software renderer satisfies GL 3.3.
+      - __GLX_VENDOR_LIBRARY_NAME=mesa
+      - __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
       - MESA_GL_VERSION_OVERRIDE=3.3
       - MESA_GLSL_VERSION_OVERRIDE=330
+      - QT_X11_NO_MITSHM=1
 
       # OGRE off-screen texture blit — avoids GLX pbuffer issues.
       - OGRE_RTT_MODE=Copy
 
-      # Qt xcb backend — required when DISPLAY points to Xvfb.
+      # Qt xcb backend.
       - QT_QPA_PLATFORM=xcb
 
       # Suppress Qt XDG_RUNTIME_DIR warnings.
@@ -65,23 +66,41 @@ services:
       - ROS_DOMAIN_ID=0
       - RCUTILS_COLORIZED_OUTPUT=1
 
-    ports:
-      - "5900:5900"   # VNC  — connect with any VNC client (no password)
-      - "6080:6080"   # noVNC — http://localhost:6080/vnc.html
+      # ------------------------------------------------------------------
+      # Gazebo Fuel — suppress REST/libcurl error spam when a model URI
+      # cannot be reached.  Set to 4 temporarily to debug Fuel issues.
+      # ------------------------------------------------------------------
+      - GZ_FUEL_VERBOSITY=0
+      - GZ_FUEL_CACHE_PATH=/home/ros/.gz/fuel
+
+    # No ports needed — GUI windows open natively on the host via X11.
 
     volumes:
+      # X11 socket — allows container GUI apps to open windows on host display.
+      # X11_SOCKET_DIR is set by run.sh:
+      #   Native Docker Engine : /tmp/.X11-unix  (direct mount)
+      #   Docker Desktop Linux : ~/.x11-bridge   (socat bridge, avoids VM /tmp restriction)
+      - ${X11_SOCKET_DIR:-/tmp/.X11-unix}:/tmp/.X11-unix:rw
       # ROS 2 package source — persisted on the host
       - ./src:/ros2_ws/src
       # Named volumes keep colcon build artifacts between container restarts
       - ros2_build_cache:/ros2_ws/build
       - ros2_install_cache:/ros2_ws/install
       - ros2_log_cache:/ros2_ws/log
+      # Persist the Gazebo Fuel model cache across container rebuilds
+      - gz_fuel_cache:/home/ros/.gz/fuel
 
     stdin_open: true
     tty: true
-    privileged: true
-    shm_size: "512mb"
+    privileged: false
+
+    shm_size: "2gb"
     restart: "no"
+
+    # ------------------------------------------------------------------
+    # Network — use bridge mode for better DNS resolution
+    # ------------------------------------------------------------------
+    network_mode: bridge
 
     # ------------------------------------------------------------------
     # DNS — explicit resolvers for fuel.gazebosim.org and other external
@@ -90,8 +109,10 @@ services:
     dns:
       - 8.8.8.8
       - 8.8.4.4
+      - 1.1.1.1
 
 volumes:
   ros2_build_cache:
   ros2_install_cache:
   ros2_log_cache:
+  gz_fuel_cache:       # Persists downloaded Gazebo Fuel models across rebuilds
